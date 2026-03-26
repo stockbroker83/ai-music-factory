@@ -15,7 +15,6 @@ from playlist import PRESETS
 
 def get_config() -> dict:
     return {
-        "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
         "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY", ""),
         "YT_PRIVACY": os.getenv("YT_PRIVACY", "unlisted"),
         "PLAYLIST_OUTPUT_DIR": os.getenv(
@@ -57,8 +56,6 @@ def get_presets() -> dict:
 def validate() -> list[str]:
     issues = []
     cfg = get_config()
-    if not cfg["ANTHROPIC_API_KEY"]:
-        issues.append("ANTHROPIC_API_KEY 미설정")
     if not cfg["GEMINI_API_KEY"]:
         issues.append("GEMINI_API_KEY 미설정")
     return issues

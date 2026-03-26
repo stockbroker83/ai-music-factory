@@ -3,9 +3,9 @@
  Playlist Factory v2 — 자율 트렌드 리서치 + 바이럴 컨셉 AI 음원 공장
 ========================================================================
 
-Step 0. 트렌드 리서치 (웹 검색: YouTube 인기 플리 + Spotify 인기 플레이리스트)
-Step 0.5. Opus 4.6 바이럴 컨셉 업그레이더 (트렌드 분석 → 미래 바이럴 예측 → 컨셉 설계)
-Step 1. Opus 4.6 트랙 설계 (20곡 프롬프트 목록)
+Step 0. 트렌드 리서치 (내장 트렌드 데이터 또는 사용자 제공)
+Step 0.5. Gemini 바이럴 컨셉 업그레이더 (트렌드 분석 → 미래 바이럴 예측 → 컨셉 설계)
+Step 1. Gemini 트랙 설계 (20곡 프롬프트 목록)
 Step 2. Lyria 3 Pro 음악 생성
 Step 3. 오디오 후처리 + 폴더 정리
 
@@ -21,8 +21,7 @@ Step 3. 오디오 후처리 + 폴더 정리
   python playlist.py                                # 대화형 모드
 
 필요 API 키 (.env):
-  ANTHROPIC_API_KEY=sk-ant-...    # Opus 4.6 (리서치 + 설계)
-  GEMINI_API_KEY=...               # Lyria 3 Pro (음악 생성)
+  GEMINI_API_KEY=...               # Gemini (컨셉 설계) + Lyria 3 Pro (음악 생성)
 """
 
 import os
@@ -47,7 +46,6 @@ except ImportError:
 # ─────────────────────────────────────────────
 # 설정
 # ─────────────────────────────────────────────
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 DEFAULT_OUTPUT_DIR = os.getenv("PLAYLIST_OUTPUT_DIR", str(Path.home() / "music" / "AI_Playlist"))
 
@@ -206,9 +204,8 @@ def post_process_audio(input_path: Path, output_path: Path) -> Path:
 
 def check_deps():
     missing = []
-    if not ANTHROPIC_API_KEY: missing.append("ANTHROPIC_API_KEY (.env)")
     if not GEMINI_API_KEY: missing.append("GEMINI_API_KEY (.env)")
-    for mod, pip in [("anthropic", "anthropic"), ("google.genai", "google-genai")]:
+    for mod, pip in [("google.genai", "google-genai")]:
         try: __import__(mod)
         except ImportError: missing.append(f"{pip} (pip install {pip})")
     if missing:
@@ -229,68 +226,14 @@ def check_deps():
 # ═════════════════════════════════════════════
 def research_trends() -> dict:
     """
-    Anthropic API의 web_search 도구를 사용하여
-    YouTube 인기 플리 + Spotify 인기 플레이리스트 트렌드를 수집합니다.
-
-    Returns:
-        {
-            "youtube_trends": "...",    # YouTube 플리 채널 트렌드 원문
-            "spotify_trends": "...",    # Spotify 인기 플레이리스트 트렌드 원문
-            "raw_search_results": [...]
-        }
+    내장 트렌드 데이터를 반환합니다.
+    (웹 검색이 필요하면 사용자가 직접 정보를 제공)
     """
-    import anthropic
+    print("\n Step 0: 트렌드 데이터 로드 중...")
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    raw_result = _fallback_trends()
 
-    print(" Step 0: 트렌드 리서치 중...")
-    print("    YouTube 인기 플레이리스트 분석...")
-    print("    Spotify 인기 플레이리스트 분석...")
-
-    research_prompt = """다음 두 가지를 웹에서 검색하고 상세히 정리해주세요:
-
-1. **YouTube 한국 플레이리스트 채널 트렌드 (2025-2026)**
-   - 최근 조회수가 높은 한국어 음악 플레이리스트 채널들
-   - 어떤 컨셉/무드의 플리가 인기인지 (카페, 새벽, 비오는날, 드라이브 등)
-   - 조회수 100만 이상 플리의 공통 특징
-   - 제목 네이밍 패턴 (이모지, 키워드)
-   - 최근 새롭게 뜨는 플리 트렌드
-
-2. **Spotify/음원 플랫폼 인기 플레이리스트 트렌드 (글로벌 + 한국)**
-   - 현재 인기 있는 무드/장르 플레이리스트
-   - 계절별 트렌드 (봄/여름/가을/겨울)
-   - 상황별 인기 카테고리 (공부, 운동, 수면, 카페, 드라이브 등)
-   - 새롭게 성장하는 니치 장르
-
-각 항목에 대해 구체적인 채널명, 플레이리스트명, 조회수 데이터가 있으면 포함해주세요.
-가능한 한 최신 데이터를 기반으로 답변해주세요."""
-
-    def _search():
-        msg = client.messages.create(
-            model="claude-opus-4-20250514",
-            max_tokens=4096,
-            tools=[{
-                "type": "web_search_20250305",
-                "name": "web_search",
-            }],
-            messages=[{"role": "user", "content": research_prompt}]
-        )
-
-        # 텍스트 블록만 추출
-        texts = []
-        for block in msg.content:
-            if hasattr(block, 'text'):
-                texts.append(block.text)
-
-        return "\n\n".join(texts)
-
-    raw_result = retry_call(_search)
-
-    if not raw_result:
-        print("   ⚠️ 웹 검색 실패 — 내장 트렌드 데이터 사용")
-        raw_result = _fallback_trends()
-
-    print("   ✅ 트렌드 리서치 완료")
+    print("   ✅ 트렌드 데이터 로드 완료")
 
     return {
         "trend_data": raw_result,
@@ -322,7 +265,7 @@ Spotify/음원 트렌드:
 
 
 # ═════════════════════════════════════════════
-# Step 0.5. Opus 바이럴 컨셉 업그레이더 (NEW)
+# Step 0.5. Gemini 바이럴 컨셉 업그레이더
 # ═════════════════════════════════════════════
 def opus_viral_concept_upgrade(
     trend_data: str,
@@ -330,24 +273,12 @@ def opus_viral_concept_upgrade(
     user_hint: str = "",
 ) -> list[dict]:
     """
-    트렌드 데이터를 분석하고, 가까운 미래에 바이럴 가능성이 높은
-    플레이리스트 컨셉을 설계합니다.
-
-    Opus 4.6의 역할:
-    1. 트렌드 패턴 분석 (무엇이 왜 인기인지)
-    2. 포화 영역 vs 블루오션 식별
-    3. 계절/시기 적합성 판단
-    4. 바이럴 가능한 제목 + 컨셉 설계
-    5. 차별화 포인트 명시
-
-    Returns: [{concept_name, concept_description, viral_reason,
-               target_audience, title_suggestion, mood, genre,
-               instruments, vocal, tempo, season_fit,
-               differentiation}, ...]
+    Gemini로 트렌드 데이터를 분석하고 바이럴 플레이리스트 컨셉을 설계합니다.
     """
-    import anthropic
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
     now = datetime.now()
     month = now.month
@@ -362,7 +293,7 @@ def opus_viral_concept_upgrade(
 이 방향성을 존중하되, 트렌드 분석을 기반으로 더 바이럴할 수 있도록 업그레이드하세요.
 """
 
-    system_prompt = f"""당신은 YouTube 플레이리스트 채널 전문 프로듀서이자 트렌드 분석가입니다.
+    prompt_text = f"""당신은 YouTube 플레이리스트 채널 전문 프로듀서이자 트렌드 분석가입니다.
 현재 날짜: {now.strftime('%Y년 %m월 %d일')}
 현재 계절: {current_season}
 
@@ -398,21 +329,22 @@ def opus_viral_concept_upgrade(
   }}
 ]
 
-{num_concepts}개의 컨셉을 만들어주세요. 각 컨셉은 서로 겹치지 않는 다른 영역이어야 합니다."""
+{num_concepts}개의 컨셉을 만들어주세요. 각 컨셉은 서로 겹치지 않는 다른 영역이어야 합니다.
 
-    print(f"\n Step 0.5: Opus 4.6 바이럴 컨셉 업그레이드 중... ({num_concepts}개)")
+트렌드 데이터:
+{trend_data}"""
+
+    print(f"\n Step 0.5: Gemini 바이럴 컨셉 업그레이드 중... ({num_concepts}개)")
 
     def _call():
-        msg = client.messages.create(
-            model="claude-opus-4-20250514",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": f"다음 트렌드 데이터를 분석하고 바이럴 컨셉을 설계해주세요:\n\n{trend_data}"
-            }]
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
         )
-        return msg.content[0].text.strip()
+        return response.text.strip()
 
     raw = retry_call(_call)
     if not raw:
@@ -452,16 +384,16 @@ def opus_viral_concept_upgrade(
 
 
 # ═════════════════════════════════════════════
-# Step 1. Opus 트랙 설계
+# Step 1. Gemini 트랙 설계
 # ═════════════════════════════════════════════
 def opus_design_playlist(concept_data: dict, count: int) -> list[dict]:
     """
-    바이럴 컨셉 데이터를 기반으로 N곡의 Lyria 프롬프트 목록 생성.
-    concept_data는 opus_viral_concept_upgrade()의 결과 또는 프리셋.
+    Gemini로 바이럴 컨셉 데이터를 기반으로 N곡의 Lyria 프롬프트 목록 생성.
     """
-    import anthropic
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = genai.Client(api_key=GEMINI_API_KEY)
 
     # concept_data에서 정보 추출
     concept_name = concept_data.get("concept_name", concept_data.get("name", ""))
@@ -473,7 +405,7 @@ def opus_design_playlist(concept_data: dict, count: int) -> list[dict]:
     description = concept_data.get("concept_description", concept_data.get("description", ""))
     differentiation = concept_data.get("differentiation", "")
 
-    system_prompt = f"""당신은 음악 플레이리스트 프로듀서입니다.
+    prompt_text = f"""당신은 음악 플레이리스트 프로듀서입니다.
 주어진 컨셉 정보를 기반으로 {count}곡의 완벽한 플레이리스트를 설계합니다.
 
 컨셉 정보:
@@ -495,6 +427,8 @@ def opus_design_playlist(concept_data: dict, count: int) -> list[dict]:
 6. 프롬프트에 "Total duration: exactly 3 minutes (180 seconds)" 반드시 포함
 7. 컨셉의 차별점을 각 곡에 반영
 
+'{concept_name}' 컨셉으로 {count}곡 플레이리스트를 설계해주세요.
+
 JSON 배열로만 응답 (다른 텍스트 없이):
 [
   {{
@@ -507,19 +441,17 @@ JSON 배열로만 응답 (다른 텍스트 없이):
   ...총 {count}곡
 ]"""
 
-    print(f"\n Step 1: Opus 4.6 — {count}곡 트랙 설계 중...")
+    print(f"\n Step 1: Gemini — {count}곡 트랙 설계 중...")
 
     def _call():
-        msg = client.messages.create(
-            model="claude-opus-4-20250514",
-            max_tokens=4096 if count <= 10 else 8000,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": f"'{concept_name}' 컨셉으로 {count}곡 플레이리스트를 설계해주세요."
-            }]
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt_text,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
         )
-        return msg.content[0].text.strip()
+        return response.text.strip()
 
     raw = retry_call(_call)
     if not raw:

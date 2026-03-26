@@ -5,8 +5,8 @@ from pathlib import Path
 from datetime import datetime
 
 LYRIA_COST_PER_TRACK = 0.08
-OPUS_INPUT_COST_PER_M = 15.0
-OPUS_OUTPUT_COST_PER_M = 75.0
+GEMINI_INPUT_COST_PER_M = 0.15    # Gemini 2.5 Flash
+GEMINI_OUTPUT_COST_PER_M = 0.60
 KRW_PER_USD = 1350
 
 
@@ -21,9 +21,9 @@ class CostTracker:
             self._jobs[job_id] = {
                 "lyria_tracks": 0,
                 "lyria_cost": 0.0,
-                "anthropic_input_tokens": 0,
-                "anthropic_output_tokens": 0,
-                "anthropic_cost": 0.0,
+                "gemini_input_tokens": 0,
+                "gemini_output_tokens": 0,
+                "gemini_cost": 0.0,
                 "total_cost": 0.0,
                 "started_at": datetime.now().isoformat(),
             }
@@ -35,20 +35,20 @@ class CostTracker:
                 return
             j["lyria_tracks"] += count
             j["lyria_cost"] = j["lyria_tracks"] * LYRIA_COST_PER_TRACK
-            j["total_cost"] = j["lyria_cost"] + j["anthropic_cost"]
+            j["total_cost"] = j["lyria_cost"] + j["gemini_cost"]
 
-    def add_anthropic(self, job_id: str, input_tokens: int, output_tokens: int):
+    def add_gemini(self, job_id: str, input_tokens: int, output_tokens: int):
         with self._lock:
             j = self._jobs.get(job_id)
             if not j:
                 return
-            j["anthropic_input_tokens"] += input_tokens
-            j["anthropic_output_tokens"] += output_tokens
-            j["anthropic_cost"] = (
-                j["anthropic_input_tokens"] / 1_000_000 * OPUS_INPUT_COST_PER_M
-                + j["anthropic_output_tokens"] / 1_000_000 * OPUS_OUTPUT_COST_PER_M
+            j["gemini_input_tokens"] += input_tokens
+            j["gemini_output_tokens"] += output_tokens
+            j["gemini_cost"] = (
+                j["gemini_input_tokens"] / 1_000_000 * GEMINI_INPUT_COST_PER_M
+                + j["gemini_output_tokens"] / 1_000_000 * GEMINI_OUTPUT_COST_PER_M
             )
-            j["total_cost"] = j["lyria_cost"] + j["anthropic_cost"]
+            j["total_cost"] = j["lyria_cost"] + j["gemini_cost"]
 
     def get_job_cost(self, job_id: str) -> dict:
         with self._lock:

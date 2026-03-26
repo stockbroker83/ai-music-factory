@@ -304,7 +304,7 @@ def api_cost():
 def api_get_settings():
     cfg = get_config()
     # API 키 마스킹
-    for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+    for key in ("GEMINI_API_KEY",):
         val = cfg.get(key, "")
         if len(val) > 8:
             cfg[key] = val[:4] + "..." + val[-4:]
