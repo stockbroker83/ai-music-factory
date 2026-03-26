@@ -1,0 +1,8 @@
+.env
+youtube_token.json
+client_secrets.json
+output/
+__pycache__/
+jobs_history.json
+cost_history.json
+*.pyc

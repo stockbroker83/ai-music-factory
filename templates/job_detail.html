@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% block title %}작업 상세 — AI Music Factory{% endblock %}
+{% block content %}
+<div class="flex gap-16 mb-16">
+    <a href="/" class="btn btn-secondary">← 대시보드</a>
+    <h2 id="job-title" style="flex:1">작업 로딩 중...</h2>
+    <span class="badge" id="job-status">...</span>
+    <button class="btn btn-danger" id="btn-cancel" style="display:none">취소</button>
+    <button class="btn btn-danger" id="btn-delete" style="display:none">삭제</button>
+</div>
+
+<!-- 소스 표시 (CLI/웹) -->
+<div id="source-badge" style="display:none" class="mb-16">
+    <span class="badge badge-pending">CLI에서 생성됨</span>
+</div>
+
+<!-- 컨셉 정보 -->
+<div class="stat-card mb-16" id="concept-info" style="display:none">
+    <div class="flex gap-16" style="flex-wrap:wrap">
+        <div style="flex:1; min-width:200px">
+            <div class="label">컨셉</div>
+            <div class="value text-sm" id="concept-name">—</div>
+            <div class="sub" id="concept-desc">—</div>
+        </div>
+        <div style="min-width:150px">
+            <div class="label">장르</div>
+            <div class="sub" id="concept-genre">—</div>
+        </div>
+        <div style="min-width:150px">
+            <div class="label">타겟</div>
+            <div class="sub" id="concept-target">—</div>
+        </div>
+        <div style="min-width:200px">
+            <div class="label">차별점</div>
+            <div class="sub" id="concept-diff">—</div>
+        </div>
+    </div>
+</div>
+
+<!-- 파이프라인 단계 -->
+<div class="stats-grid">
+    <div class="stat-card" id="step-card-0">
+        <div class="label">Step 0 — 트렌드 리서치</div>
+        <div class="sub" id="step-0-status">⏳ 대기</div>
+    </div>
+    <div class="stat-card" id="step-card-1">
+        <div class="label">Step 0.5 — 바이럴 컨셉</div>
+        <div class="sub" id="step-1-status">⏳ 대기</div>
+    </div>
+    <div class="stat-card" id="step-card-2">
+        <div class="label">Step 1 — 트랙 설계</div>
+        <div class="sub" id="step-2-status">⏳ 대기</div>
+    </div>
+    <div class="stat-card" id="step-card-3">
+        <div class="label">Step 2+3 — 생성 + 후처리</div>
+        <div class="sub" id="step-3-status">⏳ 대기</div>
+    </div>
+</div>
+
+<!-- 실시간 비용 + 시간 -->
+<div class="cost-display mb-16">
+    <div class="cost-item">
+        <div class="cost-label">완료 트랙</div>
+        <div class="cost-value" id="cost-tracks">0</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">비용 (USD)</div>
+        <div class="cost-value" id="cost-usd">$0.00</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">비용 (KRW)</div>
+        <div class="cost-value" id="cost-krw">₩0</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">소요 시간</div>
+        <div class="cost-value" id="elapsed-time">0분 0초</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">총 재생시간</div>
+        <div class="cost-value" id="total-duration">0분</div>
+    </div>
+</div>
+
+<!-- 진행률 -->
+<div class="progress-bar mb-16" style="height:10px">
+    <div class="fill" id="progress-fill" style="width:0%"></div>
+</div>
+<div class="flex gap-16 mb-16">
+    <span class="text-sm text-muted" id="progress-text">0/0 트랙 완료</span>
+    <span class="text-sm text-muted ml-auto" id="progress-eta"></span>
+</div>
+
+<!-- 트랙 테이블 -->
+<div class="section">
+    <div class="flex gap-16 mb-16">
+        <h2>트랙 목록</h2>
+        <button class="btn btn-primary" id="btn-play-all" style="display:none">전체 재생</button>
+        <button class="btn btn-secondary ml-auto" id="btn-open-folder" style="display:none">폴더 열기</button>
+    </div>
+    <table class="track-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>제목</th>
+                <th>상태</th>
+                <th>길이</th>
+                <th>크기</th>
+                <th>재생</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="track-body"></tbody>
+    </table>
+</div>
+
+<!-- 연속 재생 플레이어 -->
+<div id="playlist-player" style="display:none; position:sticky; bottom:0; background:var(--bg-secondary); border-top:1px solid var(--border); padding:16px; margin:0 -24px; border-radius:var(--radius) var(--radius) 0 0">
+    <div class="flex gap-16 mb-8">
+        <span class="text-sm" id="now-playing" style="flex:1">—</span>
+        <button class="btn btn-secondary" style="padding:4px 12px; font-size:12px" id="btn-prev-track">⏮</button>
+        <button class="btn btn-secondary" style="padding:4px 12px; font-size:12px" id="btn-next-track">⏭</button>
+        <button class="btn btn-secondary" style="padding:4px 12px; font-size:12px" id="btn-close-player">✕</button>
+    </div>
+    <audio id="playlist-audio" controls style="width:100%; height:40px"></audio>
+</div>
+
+<!-- 로그 -->
+<div class="section">
+    <div class="flex gap-16 mb-16">
+        <h2>로그</h2>
+        <label class="text-sm text-muted ml-auto">
+            <input type="checkbox" id="auto-scroll" checked style="width:auto"> 자동 스크롤
+        </label>
+    </div>
+    <div class="log-viewer" id="log-viewer"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_ID = '{{ job_id }}';
+let startTime = null;
+let elapsedTimer = null;
+let playlistTracks = [];
+let currentPlayIdx = -1;
+
+async function loadJob() {
+    const j = await api(`/api/jobs/${JOB_ID}`);
+    if (j.error) return;
+    render(j);
+}
+
+function render(j) {
+    // 제목
+    const concept = j.concepts?.[0]?.concept_name || j.config?.concept || j.config?.preset_key || '작업';
+    document.getElementById('job-title').textContent = concept;
+
+    // 상태
+    const badge = document.getElementById('job-status');
+    const labels = { pending:'대기', researching:'리서치 중', designing:'설계 중', generating:'생성 중', complete:'완료', failed:'실패', cancelled:'취소됨' };
+    badge.textContent = labels[j.status] || j.status;
+    badge.className = `badge badge-${j.status}`;
+
+    // 취소 버튼
+    document.getElementById('btn-cancel').style.display =
+        ['pending','researching','designing','generating'].includes(j.status) ? '' : 'none';
+
+    // 삭제 버튼 (완료된 작업만)
+    document.getElementById('btn-delete').style.display =
+        ['complete','failed','cancelled'].includes(j.status) ? '' : 'none';
+
+    // CLI 소스 표시
+    document.getElementById('source-badge').style.display = j.source === 'cli' ? '' : 'none';
+
+    // 폴더 열기 버튼
+    const folderBtn = document.getElementById('btn-open-folder');
+    if (j.output_dir && j.tracks?.length > 0) {
+        folderBtn.style.display = '';
+        folderBtn.onclick = () => api(`/api/open-folder?path=${encodeURIComponent(j.output_dir)}`);
+    }
+
+    // 전체 재생 버튼
+    playlistTracks = (j.tracks || []).filter(t => t.status === 'success' && t.path);
+    document.getElementById('btn-play-all').style.display = playlistTracks.length > 0 ? '' : 'none';
+
+    // 컨셉 정보
+    const c = j.concepts?.[0];
+    const infoCard = document.getElementById('concept-info');
+    if (c && c.concept_name) {
+        infoCard.style.display = '';
+        document.getElementById('concept-name').textContent = c.concept_name;
+        document.getElementById('concept-desc').textContent = c.concept_description || c.description || '';
+        document.getElementById('concept-genre').textContent = c.genre || '—';
+        document.getElementById('concept-target').textContent = c.target_audience || '—';
+        document.getElementById('concept-diff').textContent = c.differentiation || '—';
+    }
+
+    // 단계 업데이트
+    const sm = { pending:0, researching:1, designing:2, generating:4, complete:5, failed:-1, cancelled:-1 };
+    const cur = sm[j.status] || 0;
+    const stepStates = [
+        cur >= 2 ? '✓ 완료' : cur >= 1 ? '⏳ 진행 중...' : '대기',
+        cur >= 3 ? '✓ 완료' : cur >= 2 ? '⏳ 진행 중...' : '대기',
+        cur >= 4 ? '✓ 완료' : cur >= 3 ? '⏳ 진행 중...' : '대기',
+        cur >= 5 ? '✓ 완료' : cur >= 4 ? '⏳ 진행 중...' : '대기',
+    ];
+    for (let i = 0; i < 4; i++) {
+        const el = document.getElementById(`step-${i}-status`);
+        el.textContent = stepStates[i];
+        const card = document.getElementById(`step-card-${i}`);
+        card.style.borderColor = stepStates[i].includes('진행') ? 'var(--warning)' : stepStates[i].includes('완료') ? 'var(--success)' : 'var(--border)';
+    }
+
+    // 비용
+    if (j.cost) {
+        document.getElementById('cost-tracks').textContent = j.cost.lyria_tracks || 0;
+        document.getElementById('cost-usd').textContent = `$${(j.cost.total_cost || 0).toFixed(2)}`;
+        document.getElementById('cost-krw').textContent = `₩${(j.cost.total_krw || 0).toLocaleString()}`;
+    }
+
+    // 총 재생시간
+    const totalDur = j.tracks?.reduce((s, t) => s + (t.duration_sec || 0), 0) || 0;
+    document.getElementById('total-duration').textContent = totalDur > 0 ? `${Math.floor(totalDur/60)}분 ${Math.round(totalDur%60)}초` : '—';
+
+    // 진행률 + ETA
+    const total = j.total_count || j.config?.count || 0;
+    const done = j.success_count + j.failed_count;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('progress-fill').style.width = `${pct}%`;
+    document.getElementById('progress-text').textContent = `${done}/${total} 트랙 완료 (${pct}%)`;
+
+    // ETA 계산
+    if (done > 0 && done < total && j.started_at) {
+        const elapsed = (Date.now() - new Date(j.started_at).getTime()) / 1000;
+        const perTrack = elapsed / done;
+        const remaining = (total - done) * perTrack;
+        document.getElementById('progress-eta').textContent = `예상 남은 시간: ${Math.floor(remaining/60)}분 ${Math.floor(remaining%60)}초`;
+    } else {
+        document.getElementById('progress-eta').textContent = '';
+    }
+
+    // 트랙 테이블
+    const tbody = document.getElementById('track-body');
+    tbody.innerHTML = j.tracks.map(t => {
+        const sc = t.status === 'success' ? 'text-success' : t.status === 'failed' ? 'text-error' : 'text-warning';
+        const si = t.status === 'success' ? '✓' : t.status === 'failed' ? '✗' : '⏳';
+        const dur = t.duration_sec ? `${Math.floor(t.duration_sec/60)}:${String(Math.round(t.duration_sec%60)).padStart(2,'0')}` : '—';
+        const size = t.size_kb ? `${(t.size_kb/1024).toFixed(1)}MB` : '—';
+        const audio = t.path && t.status === 'success'
+            ? `<audio controls preload="none" src="/audio/${encodeURIComponent(t.path)}" style="height:28px; max-width:250px"></audio>`
+            : t.status === 'generating' ? '<span class="text-warning">생성 중...</span>' : '—';
+        const retryBtn = t.status === 'failed'
+            ? `<button class="btn btn-secondary" style="padding:4px 10px; font-size:11px" onclick="retryTrack(${t.track_number})">재시도</button>`
+            : '';
+        return `<tr>
+            <td>${t.track_number || ''}</td>
+            <td>${t.title_ko || ''}</td>
+            <td class="${sc}">${si} ${t.status === 'success' ? '완료' : t.status === 'failed' ? '실패' : t.status === 'generating' ? '생성 중' : t.status}</td>
+            <td>${dur}</td>
+            <td>${size}</td>
+            <td>${audio}</td>
+            <td>${retryBtn}</td>
+        </tr>`;
+    }).join('');
+
+    // 로그
+    const logDiv = document.getElementById('log-viewer');
+    logDiv.innerHTML = j.logs.map(l => {
+        let cls = '';
+        if (l.includes('✓') || l.includes('완료')) cls = 'text-success';
+        else if (l.includes('✗') || l.includes('실패') || l.includes('오류')) cls = 'text-error';
+        else if (l.includes('생성 중') || l.includes('진행')) cls = 'text-warning';
+        return `<div class="${cls}">${l}</div>`;
+    }).join('');
+    if (document.getElementById('auto-scroll').checked) logDiv.scrollTop = logDiv.scrollHeight;
+
+    // 타이머
+    if (j.started_at && !j.completed_at && !elapsedTimer) {
+        startTime = new Date(j.started_at);
+        elapsedTimer = setInterval(updateElapsed, 1000);
+    }
+    if (j.completed_at) {
+        if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+        const secs = (new Date(j.completed_at) - new Date(j.started_at)) / 1000;
+        document.getElementById('elapsed-time').textContent = formatTime(secs);
+    }
+}
+
+function updateElapsed() {
+    if (!startTime) return;
+    const secs = (Date.now() - startTime.getTime()) / 1000;
+    document.getElementById('elapsed-time').textContent = formatTime(secs);
+}
+
+function formatTime(secs) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}분 ${s}초`;
+}
+
+// 취소
+document.getElementById('btn-cancel').addEventListener('click', async () => {
+    if (confirm('작업을 취소하시겠습니까?')) {
+        await api(`/api/jobs/${JOB_ID}/cancel`, { method: 'POST' });
+        loadJob();
+    }
+});
+
+// 삭제
+document.getElementById('btn-delete').addEventListener('click', async () => {
+    if (confirm('작업 기록을 삭제하시겠습니까? (생성된 파일은 유지됩니다)')) {
+        await api(`/api/jobs/${JOB_ID}`, { method: 'DELETE' });
+        window.location.href = '/';
+    }
+});
+
+// 실패 트랙 재시도
+async function retryTrack(trackNumber) {
+    const resp = await api(`/api/jobs/${JOB_ID}/retry`, {
+        method: 'POST',
+        body: JSON.stringify({ track_number: trackNumber }),
+    });
+    if (resp.status === 'retrying') {
+        loadJob();
+    } else {
+        alert(resp.error || '재시도 실패');
+    }
+}
+
+// 전체 재생
+document.getElementById('btn-play-all').addEventListener('click', () => {
+    if (playlistTracks.length === 0) return;
+    currentPlayIdx = 0;
+    playTrackByIdx(0);
+    document.getElementById('playlist-player').style.display = '';
+});
+
+function playTrackByIdx(idx) {
+    if (idx < 0 || idx >= playlistTracks.length) return;
+    currentPlayIdx = idx;
+    const t = playlistTracks[idx];
+    const audio = document.getElementById('playlist-audio');
+    audio.src = `/audio/${encodeURIComponent(t.path)}`;
+    audio.play();
+    document.getElementById('now-playing').textContent =
+        `🎵 ${t.title_ko || t.filename} (${idx+1}/${playlistTracks.length})`;
+}
+
+document.getElementById('btn-prev-track').addEventListener('click', () => {
+    if (currentPlayIdx > 0) playTrackByIdx(currentPlayIdx - 1);
+});
+document.getElementById('btn-next-track').addEventListener('click', () => {
+    if (currentPlayIdx < playlistTracks.length - 1) playTrackByIdx(currentPlayIdx + 1);
+});
+document.getElementById('btn-close-player').addEventListener('click', () => {
+    document.getElementById('playlist-audio').pause();
+    document.getElementById('playlist-player').style.display = 'none';
+});
+document.getElementById('playlist-audio').addEventListener('ended', () => {
+    if (currentPlayIdx < playlistTracks.length - 1) playTrackByIdx(currentPlayIdx + 1);
+});
+
+loadJob();
+setInterval(loadJob, 3000);
+
+SSE.on('track_complete', (d) => { if (d.job_id === JOB_ID) loadJob(); });
+SSE.on('track_failed', (d) => { if (d.job_id === JOB_ID) loadJob(); });
+SSE.on('track_progress', (d) => { if (d.job_id === JOB_ID) loadJob(); });
+SSE.on('log_line', (d) => {
+    if (d.job_id !== JOB_ID) return;
+    const logDiv = document.getElementById('log-viewer');
+    let cls = '';
+    if (d.message.includes('✓')) cls = 'text-success';
+    else if (d.message.includes('✗') || d.message.includes('실패')) cls = 'text-error';
+    logDiv.innerHTML += `<div class="${cls}">${d.message}</div>`;
+    if (document.getElementById('auto-scroll').checked) logDiv.scrollTop = logDiv.scrollHeight;
+});
+SSE.on('cost_update', (d) => {
+    if (d.job_id !== JOB_ID) return;
+    document.getElementById('cost-tracks').textContent = d.lyria_tracks || 0;
+    document.getElementById('cost-usd').textContent = `$${(d.total_cost || 0).toFixed(2)}`;
+    document.getElementById('cost-krw').textContent = `₩${(d.total_krw || 0).toLocaleString()}`;
+});
+SSE.on('job_complete', (d) => { if (d.job_id === JOB_ID) loadJob(); });
+</script>
+{% endblock %}

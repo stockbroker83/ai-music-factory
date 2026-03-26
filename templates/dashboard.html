@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{% block title %}대시보드 — AI Music Factory{% endblock %}
+{% block content %}
+
+<!-- 상단 통계 카드 -->
+<div class="stats-grid" id="stats">
+    <div class="stat-card">
+        <div class="label">총 작업</div>
+        <div class="value" id="stat-jobs">0</div>
+        <div class="sub" id="stat-jobs-sub">진행 0 · 완료 0</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">생성된 트랙</div>
+        <div class="value" id="stat-tracks">0</div>
+        <div class="sub" id="stat-tracks-sub">성공 0 · 실패 0</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">총 비용</div>
+        <div class="value text-success" id="stat-cost-usd">$0.00</div>
+        <div class="sub text-success" id="stat-cost-krw">₩0</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">총 재생시간</div>
+        <div class="value" id="stat-total-duration">0분</div>
+        <div class="sub" id="stat-total-size">0MB</div>
+    </div>
+</div>
+
+<!-- 진행 중인 작업 (실시간) -->
+<div class="section" id="active-section" style="display:none">
+    <div class="flex gap-16 mb-16">
+        <h2>진행 중인 작업</h2>
+        <span class="badge badge-generating" id="active-count">0</span>
+    </div>
+    <div class="job-list" id="active-jobs"></div>
+</div>
+
+<!-- 빠른 시작 -->
+<div class="section">
+    <div class="flex gap-16 mb-16">
+        <h2>빠른 시작</h2>
+    </div>
+    <div class="stats-grid">
+        <a href="/new" class="stat-card" style="text-decoration:none; cursor:pointer; border-color:var(--accent)">
+            <div class="label" style="color:var(--accent)">풀 자동</div>
+            <div class="value text-sm">트렌드 리서치 → 바이럴 컨셉</div>
+            <div class="sub">AI가 알아서 트렌드 분석 + 컨셉 설계 + 음악 생성</div>
+        </a>
+        <div class="stat-card quick-preset" data-preset="cafe_morning" style="cursor:pointer">
+            <div class="label">프리셋</div>
+            <div class="value text-sm">아침 카페 어쿠스틱</div>
+            <div class="sub">클릭하면 바로 시작 (20곡)</div>
+        </div>
+        <div class="stat-card quick-preset" data-preset="rainy_day" style="cursor:pointer">
+            <div class="label">프리셋</div>
+            <div class="value text-sm">비오는 날 감성</div>
+            <div class="sub">클릭하면 바로 시작 (20곡)</div>
+        </div>
+        <div class="stat-card quick-preset" data-preset="study_lofi" style="cursor:pointer">
+            <div class="label">프리셋</div>
+            <div class="value text-sm">공부할 때 Lo-fi</div>
+            <div class="sub">클릭하면 바로 시작 (20곡)</div>
+        </div>
+    </div>
+</div>
+
+<!-- 완료된 작업 이력 (CLI + 웹 통합) -->
+<div class="section">
+    <div class="flex gap-16 mb-16">
+        <h2>작업 이력</h2>
+        <a href="/new" class="btn btn-primary ml-auto">+ 새 작업</a>
+    </div>
+    <div class="job-list" id="completed-jobs">
+        <div class="empty-state" id="empty-state">
+            <div class="icon">🎵</div>
+            <p>아직 작업이 없습니다</p>
+            <p class="text-sm text-muted mt-8">새 작업을 만들어 AI 음악을 생성해보세요</p>
+        </div>
+    </div>
+</div>
+
+<!-- 최근 생성 폴더 -->
+<div class="section">
+    <div class="flex gap-16 mb-16">
+        <h2>최근 다운로드 폴더</h2>
+        <a href="/browse" class="btn btn-secondary ml-auto">전체 보기</a>
+    </div>
+    <div class="preset-grid" id="recent-folders"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allJobs = [];
+
+async function loadDashboard() {
+    const [jobs, cost, folders, diskStats] = await Promise.all([
+        api('/api/jobs'),
+        api('/api/cost'),
+        api('/api/recent-folders'),
+        api('/api/disk-stats'),
+    ]);
+    allJobs = jobs;
+
+    // 통계 카드
+    const activeJobs = jobs.filter(j => !['complete','failed','cancelled'].includes(j.status));
+    const doneJobs = jobs.filter(j => j.status === 'complete');
+    const totalSuccess = jobs.reduce((s, j) => s + (j.success_count || 0), 0);
+    const totalFailed = jobs.reduce((s, j) => s + (j.failed_count || 0), 0);
+
+    document.getElementById('stat-jobs').textContent = jobs.length;
+    document.getElementById('stat-jobs-sub').textContent = `진행 ${activeJobs.length} · 완료 ${doneJobs.length}`;
+    document.getElementById('stat-tracks').textContent = diskStats.total_tracks || totalSuccess;
+    document.getElementById('stat-tracks-sub').textContent = `성공 ${totalSuccess} · 실패 ${totalFailed}`;
+    document.getElementById('stat-cost-usd').textContent = `$${(cost.total_usd || 0).toFixed(2)}`;
+    document.getElementById('stat-cost-krw').textContent = `₩${(cost.total_krw || 0).toLocaleString()}`;
+
+    // 총 재생시간 + 용량
+    const durMin = diskStats.total_duration_min || 0;
+    document.getElementById('stat-total-duration').textContent = durMin > 60
+        ? `${Math.floor(durMin/60)}시간 ${Math.round(durMin%60)}분`
+        : `${Math.round(durMin)}분`;
+    const sizeMB = diskStats.total_size_mb || 0;
+    document.getElementById('stat-total-size').textContent = sizeMB > 1024
+        ? `${(sizeMB/1024).toFixed(1)}GB · ${diskStats.folder_count}개 폴더`
+        : `${Math.round(sizeMB)}MB · ${diskStats.folder_count}개 폴더`;
+
+    // 진행 중 작업
+    const activeSection = document.getElementById('active-section');
+    const activeList = document.getElementById('active-jobs');
+    if (activeJobs.length > 0) {
+        activeSection.style.display = '';
+        document.getElementById('active-count').textContent = activeJobs.length;
+        activeList.innerHTML = activeJobs.map(j => renderActiveJob(j)).join('');
+    } else {
+        activeSection.style.display = 'none';
+    }
+
+    // 완료 이력 (CLI 포함)
+    const completedList = document.getElementById('completed-jobs');
+    const empty = document.getElementById('empty-state');
+    const historyJobs = jobs.filter(j => ['complete','failed','cancelled'].includes(j.status));
+
+    if (historyJobs.length === 0 && activeJobs.length === 0) {
+        empty.style.display = '';
+        completedList.innerHTML = '';
+        completedList.appendChild(empty);
+    } else if (historyJobs.length === 0) {
+        completedList.innerHTML = '<div class="text-sm text-muted" style="padding:20px">아직 완료된 작업이 없습니다</div>';
+    } else {
+        completedList.innerHTML = historyJobs.map(j => renderCompletedJob(j)).join('');
+    }
+
+    // 최근 폴더
+    const foldersDiv = document.getElementById('recent-folders');
+    if (folders.length > 0) {
+        foldersDiv.innerHTML = folders.slice(0, 6).map(f => `
+            <a href="/browse?path=${encodeURIComponent(f.path)}" class="preset-card" style="text-decoration:none; color:inherit">
+                <div class="preset-name">📁 ${f.name}</div>
+                <div class="preset-desc">${f.track_count}곡 · ${f.total_size}</div>
+                <div class="preset-genre">${f.date}</div>
+            </a>
+        `).join('');
+    } else {
+        foldersDiv.innerHTML = '<div class="text-sm text-muted">아직 생성된 폴더가 없습니다</div>';
+    }
+}
+
+function renderActiveJob(j) {
+    const concept = j.concepts?.[0]?.concept_name || j.config?.concept || j.config?.preset_key || '준비 중...';
+    const total = j.total_count || j.config?.count || 0;
+    const done = j.success_count + j.failed_count;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const costStr = j.cost?.total_cost ? `$${j.cost.total_cost.toFixed(2)}` : '$0.00';
+
+    const currentTrack = j.tracks?.find(t => t.status === 'generating');
+    const currentInfo = currentTrack ? `🎵 ${currentTrack.title_ko} 생성 중...` : '';
+
+    let elapsed = '';
+    if (j.started_at) {
+        const secs = (Date.now() - new Date(j.started_at).getTime()) / 1000;
+        elapsed = `${Math.floor(secs/60)}분 ${Math.floor(secs%60)}초`;
+    }
+
+    const conceptList = j.concepts?.length > 1
+        ? j.concepts.map((c, i) => `<span class="badge badge-designing" style="margin-right:4px">${c.concept_name}</span>`).join('')
+        : '';
+
+    return `
+    <a href="/job/${j.id}" class="job-card" style="border-left: 3px solid var(--warning)">
+        <div class="job-header">
+            <span class="job-title">${concept}</span>
+            <span class="badge badge-${j.status}">${statusLabel(j.status)}</span>
+        </div>
+        ${conceptList ? `<div class="mt-8">${conceptList}</div>` : ''}
+        <div class="job-meta">
+            ${done}/${total} 트랙 완료 · ${costStr} · ${elapsed}
+        </div>
+        ${currentInfo ? `<div class="text-sm text-warning mt-8">${currentInfo}</div>` : ''}
+        <div class="progress-bar">
+            <div class="fill" style="width:${pct}%; ${j.status === 'generating' ? 'animation: pulse 1.5s infinite' : ''}"></div>
+        </div>
+        <div class="text-sm text-muted mt-8">${pct}% 완료</div>
+    </a>`;
+}
+
+function renderCompletedJob(j) {
+    const concept = j.concepts?.[0]?.concept_name || j.config?.concept || j.config?.preset_key || '—';
+    const costStr = j.cost?.total_cost ? `$${j.cost.total_cost.toFixed(2)} (₩${(j.cost.total_krw || 0).toLocaleString()})` : '';
+    const statusIcon = j.status === 'complete' ? '✓' : j.status === 'failed' ? '✗' : '⊘';
+    const sourceTag = j.source === 'cli' ? '<span class="badge badge-pending" style="margin-left:6px; font-size:10px">CLI</span>' : '';
+
+    let elapsed = '';
+    if (j.started_at && j.completed_at) {
+        const secs = (new Date(j.completed_at) - new Date(j.started_at)) / 1000;
+        elapsed = `${Math.floor(secs/60)}분`;
+    }
+
+    const totalDur = j.tracks?.reduce((s, t) => s + (t.duration_sec || 0), 0) || 0;
+    const durStr = totalDur > 0 ? `${Math.floor(totalDur/60)}분` : '';
+
+    // 날짜 표시
+    let dateStr = '';
+    if (j.created_at) {
+        try {
+            const d = new Date(j.created_at);
+            dateStr = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+        } catch(e) {}
+    }
+
+    return `
+    <div class="job-card" style="position:relative">
+        <a href="/job/${j.id}" style="text-decoration:none; color:inherit; display:block">
+            <div class="job-header">
+                <span class="job-title">${statusIcon} ${concept}${sourceTag}</span>
+                <span class="badge badge-${j.status}">${statusLabel(j.status)}</span>
+            </div>
+            <div class="job-meta flex gap-16" style="flex-wrap:wrap">
+                <span>${j.success_count}/${j.total_count} 트랙</span>
+                ${durStr ? `<span>총 ${durStr}</span>` : ''}
+                ${elapsed ? `<span>소요 ${elapsed}</span>` : ''}
+                ${costStr ? `<span>${costStr}</span>` : ''}
+                ${dateStr ? `<span>${dateStr}</span>` : ''}
+                <span>${j.config?.mode || ''} 모드</span>
+            </div>
+        </a>
+        <button class="btn-delete-job" title="삭제" onclick="event.stopPropagation(); deleteJob('${j.id}')">×</button>
+    </div>`;
+}
+
+async function deleteJob(jobId) {
+    if (!confirm('이 작업 기록을 삭제하시겠습니까?')) return;
+    await api(`/api/jobs/${jobId}`, { method: 'DELETE' });
+    loadDashboard();
+}
+
+function statusLabel(status) {
+    const labels = {
+        pending: '대기',
+        researching: '리서치 중',
+        designing: '설계 중',
+        generating: '생성 중',
+        complete: '완료',
+        failed: '실패',
+        cancelled: '취소됨',
+    };
+    return labels[status] || status;
+}
+
+// 프리셋 빠른 시작
+document.querySelectorAll('.quick-preset').forEach(card => {
+    card.addEventListener('click', async () => {
+        if (!confirm(`"${card.querySelector('.value').textContent}" 프리셋으로 20곡 바로 시작할까요?`)) return;
+        card.style.opacity = '0.5';
+        card.querySelector('.sub').textContent = '시작 중...';
+        const result = await api('/api/jobs', {
+            method: 'POST',
+            body: JSON.stringify({
+                mode: 'preset',
+                preset_key: card.dataset.preset,
+                count: 20,
+            }),
+        });
+        if (result.job_id) {
+            window.location.href = `/job/${result.job_id}`;
+        }
+    });
+});
+
+// 로드 + 자동 갱신
+loadDashboard();
+setInterval(loadDashboard, 3000);
+
+SSE.on('job_complete', loadDashboard);
+SSE.on('job_created', loadDashboard);
+SSE.on('cost_update', loadDashboard);
+SSE.on('track_complete', loadDashboard);
+SSE.on('track_progress', loadDashboard);
+</script>
+
+<style>
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+.btn-delete-job {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    opacity: 0;
+}
+.job-card:hover .btn-delete-job { opacity: 1; }
+.btn-delete-job:hover {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+</style>
+{% endblock %}

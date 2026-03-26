@@ -1,0 +1,241 @@
+#!/usr/bin/env python3
+"""AI Music Factory — Web Dashboard"""
+import os
+import sys
+import json
+import uuid
+import webbrowser
+import threading
+from pathlib import Path
+
+os.environ["PYTHONIOENCODING"] = "utf-8"
+
+from flask import Flask, render_template, request, jsonify, Response, send_from_directory
+
+from core.event_bus import event_bus
+from core.job_manager import job_manager
+from core.cost_tracker import cost_tracker
+from core.config import get_config, save_config, get_presets, validate
+
+app = Flask(__name__)
+
+OUTPUT_DIR = os.getenv("PLAYLIST_OUTPUT_DIR", str(Path.home() / "music" / "AI_Playlist"))
+
+
+# ─── Pages ───────────────────────────────────
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
+
+
+@app.route("/new")
+def new_job_page():
+    return render_template("new_job.html", presets=get_presets())
+
+
+@app.route("/job/<job_id>")
+def job_detail_page(job_id):
+    return render_template("job_detail.html", job_id=job_id)
+
+
+@app.route("/settings")
+def settings_page():
+    return render_template("settings.html")
+
+
+@app.route("/browse")
+def browser_page():
+    return render_template("browser.html")
+
+
+# ─── API ─────────────────────────────────────
+@app.route("/api/jobs", methods=["GET"])
+def api_list_jobs():
+    return jsonify(job_manager.list_jobs())
+
+
+@app.route("/api/jobs", methods=["POST"])
+def api_create_job():
+    config = request.json
+    if not config:
+        return jsonify({"error": "No config"}), 400
+    config.setdefault("output_dir", OUTPUT_DIR)
+    job = job_manager.create_job(config)
+    return jsonify({"job_id": job.id, "status": "created"})
+
+
+@app.route("/api/jobs/<job_id>")
+def api_get_job(job_id):
+    job = job_manager.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(job.to_dict())
+
+
+@app.route("/api/jobs/<job_id>/cancel", methods=["POST"])
+def api_cancel_job(job_id):
+    job_manager.cancel_job(job_id)
+    return jsonify({"status": "cancelled"})
+
+
+@app.route("/api/jobs/<job_id>", methods=["DELETE"])
+def api_delete_job(job_id):
+    if job_manager.delete_job(job_id):
+        return jsonify({"status": "deleted"})
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.route("/api/jobs/<job_id>/retry", methods=["POST"])
+def api_retry_track(job_id):
+    data = request.json or {}
+    track_number = data.get("track_number")
+    if not track_number:
+        return jsonify({"error": "track_number required"}), 400
+    if job_manager.retry_track(job_id, track_number):
+        return jsonify({"status": "retrying"})
+    return jsonify({"error": "Cannot retry"}), 400
+
+
+@app.route("/api/disk-stats")
+def api_disk_stats():
+    return jsonify(job_manager.get_disk_stats())
+
+
+@app.route("/api/events")
+def sse_stream():
+    client_id = str(uuid.uuid4())
+
+    def generate():
+        event_bus.subscribe(client_id)
+        try:
+            yield from event_bus.listen(client_id)
+        finally:
+            event_bus.unsubscribe(client_id)
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/cost")
+def api_cost():
+    return jsonify(cost_tracker.get_total())
+
+
+@app.route("/api/settings", methods=["GET"])
+def api_get_settings():
+    cfg = get_config()
+    # API 키 마스킹
+    for key in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY"):
+        val = cfg.get(key, "")
+        if len(val) > 8:
+            cfg[key] = val[:4] + "..." + val[-4:]
+    cfg["issues"] = validate()
+    return jsonify(cfg)
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_save_settings():
+    updates = request.json
+    if not updates:
+        return jsonify({"error": "No data"}), 400
+    save_config(updates)
+    return jsonify({"status": "saved"})
+
+
+@app.route("/api/presets")
+def api_presets():
+    return jsonify(get_presets())
+
+
+@app.route("/api/recent-folders")
+def api_recent_folders():
+    """최근 생성된 음악 폴더 목록 (대시보드용)"""
+    base = Path(OUTPUT_DIR)
+    if not base.exists():
+        return jsonify([])
+
+    folders = []
+    for d in sorted(base.iterdir(), reverse=True):
+        if not d.is_dir() or d.name.startswith("_"):
+            continue
+        # 폴더 내 mp3 파일 수 + 총 크기
+        mp3s = list(d.glob("*.mp3"))
+        total_bytes = sum(f.stat().st_size for f in mp3s)
+        if total_bytes > 1024 * 1024:
+            size_str = f"{total_bytes / (1024*1024):.1f}MB"
+        else:
+            size_str = f"{total_bytes / 1024:.0f}KB"
+
+        # 날짜 파싱 (폴더명 앞 8자리)
+        date_str = d.name[:8] if len(d.name) >= 8 and d.name[:8].isdigit() else ""
+        if date_str:
+            date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+
+        # _playlist_info.json에서 추가 정보
+        info_file = d / "_playlist_info.json"
+        concept_name = d.name[9:] if len(d.name) > 9 else d.name  # 날짜 제거
+        if info_file.exists():
+            try:
+                info = json.loads(info_file.read_text(encoding="utf-8"))
+                concept_name = info.get("concept", {}).get("concept_name", concept_name)
+            except Exception:
+                pass
+
+        folders.append({
+            "name": concept_name.replace("_", " "),
+            "path": str(d),
+            "track_count": len(mp3s),
+            "total_size": size_str,
+            "date": date_str,
+        })
+
+    return jsonify(folders[:20])
+
+
+@app.route("/api/open-folder")
+def api_open_folder():
+    """탐색기로 폴더 열기"""
+    folder = request.args.get("path", OUTPUT_DIR)
+    folder_path = Path(folder)
+    if folder_path.exists():
+        import subprocess as sp
+        sp.Popen(["explorer", str(folder_path)])
+        return jsonify({"status": "opened"})
+    return jsonify({"error": "not found"}), 404
+
+
+@app.route("/api/browse")
+def api_browse():
+    base = Path(request.args.get("path", OUTPUT_DIR))
+    if not base.exists():
+        return jsonify({"dirs": [], "files": []})
+
+    dirs = sorted([d.name for d in base.iterdir() if d.is_dir()], reverse=True)
+    files = []
+    for f in sorted(base.iterdir()):
+        if f.is_file() and f.suffix in (".mp3", ".wav", ".json"):
+            files.append({
+                "name": f.name,
+                "size_kb": round(f.stat().st_size / 1024),
+                "type": f.suffix,
+            })
+    return jsonify({"path": str(base), "dirs": dirs, "files": files})
+
+
+@app.route("/audio/<path:filepath>")
+def serve_audio(filepath):
+    full = Path(filepath)
+    if full.exists() and full.suffix in (".mp3", ".wav"):
+        return send_from_directory(str(full.parent), full.name)
+    return "Not found", 404
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 5000))
+    print(f"\n  AI Music Factory Dashboard")
+    print(f"  http://localhost:{port}\n")
+    threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}파일 브라우저 — AI Music Factory{% endblock %}
+{% block content %}
+<div class="flex gap-16 mb-16">
+    <h2>생성된 음악 파일</h2>
+    <button class="btn btn-secondary ml-auto" id="btn-open-explorer">탐색기에서 열기</button>
+</div>
+
+<div class="flex gap-8 mb-16">
+    <button class="btn btn-secondary" id="btn-back">← 뒤로</button>
+    <button class="btn btn-secondary" id="btn-home">홈</button>
+    <span class="text-sm text-muted" id="current-path" style="margin-left:8px; word-break:break-all"></span>
+</div>
+
+<!-- 폴더 요약 -->
+<div class="cost-display mb-16" id="folder-summary" style="display:none">
+    <div class="cost-item">
+        <div class="cost-label">음악 파일</div>
+        <div class="cost-value" id="sum-tracks">0</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">총 크기</div>
+        <div class="cost-value" id="sum-size">0MB</div>
+    </div>
+    <div class="cost-item">
+        <div class="cost-label">폴더 수</div>
+        <div class="cost-value" id="sum-dirs">0</div>
+    </div>
+</div>
+
+<!-- 폴더 목록 -->
+<div id="dir-list" class="mb-16"></div>
+
+<!-- 파일 목록 -->
+<ul class="file-list" id="file-list"></ul>
+
+<!-- 오디오 플레이어 (하단 고정) -->
+<div id="player-section" style="display:none; position:sticky; bottom:0; background:var(--bg-secondary); border-top:1px solid var(--border); padding:16px; margin:0 -24px; border-radius:var(--radius) var(--radius) 0 0">
+    <div class="flex gap-16 mb-8">
+        <span class="text-sm" id="now-playing" style="flex:1"></span>
+        <button class="btn btn-secondary" style="padding:4px 12px; font-size:12px" id="btn-prev">⏮</button>
+        <button class="btn btn-secondary" style="padding:4px 12px; font-size:12px" id="btn-next">⏭</button>
+    </div>
+    <audio id="main-player" controls style="width:100%; height:40px"></audio>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentPath = '';
+let pathHistory = [];
+let audioFiles = [];
+let currentAudioIdx = -1;
+
+async function browse(path) {
+    if (path === undefined) path = '';
+    const resp = await api(`/api/browse?path=${encodeURIComponent(path)}`);
+
+    currentPath = resp.path || '';
+    document.getElementById('current-path').textContent = currentPath;
+
+    // 오디오 파일 목록 저장 (이전/다음 재생용)
+    audioFiles = (resp.files || []).filter(f => f.type === '.mp3' || f.type === '.wav');
+
+    // 폴더 요약
+    const summary = document.getElementById('folder-summary');
+    if (resp.dirs?.length > 0 || resp.files?.length > 0) {
+        summary.style.display = '';
+        const totalSize = (resp.files || []).reduce((s, f) => s + (f.size_kb || 0), 0);
+        document.getElementById('sum-tracks').textContent = audioFiles.length;
+        document.getElementById('sum-size').textContent = totalSize > 1024 ? `${(totalSize/1024).toFixed(1)}MB` : `${totalSize}KB`;
+        document.getElementById('sum-dirs').textContent = resp.dirs?.length || 0;
+    } else {
+        summary.style.display = 'none';
+    }
+
+    // 폴더
+    const dirDiv = document.getElementById('dir-list');
+    if (resp.dirs && resp.dirs.length > 0) {
+        dirDiv.innerHTML = '<div class="preset-grid">' + resp.dirs.map(d => {
+            const safePath = (currentPath + '/' + d).replace(/\\/g, '/');
+            return `
+            <div class="preset-card" onclick="navigateTo('${safePath}')">
+                <div class="preset-name">📁 ${d.replace(/_/g, ' ')}</div>
+            </div>`;
+        }).join('') + '</div>';
+    } else {
+        dirDiv.innerHTML = '';
+    }
+
+    // 파일
+    const fileList = document.getElementById('file-list');
+    if (resp.files && resp.files.length > 0) {
+        fileList.innerHTML = resp.files.map((f, idx) => {
+            const isAudio = f.type === '.mp3' || f.type === '.wav';
+            const icon = isAudio ? '🎵' : f.type === '.json' ? '📋' : '📄';
+            const size = f.size_kb > 1024 ? `${(f.size_kb/1024).toFixed(1)}MB` : `${f.size_kb}KB`;
+            const safePath = (currentPath + '/' + f.name).replace(/\\/g, '/');
+            const audioIdx = isAudio ? audioFiles.findIndex(a => a.name === f.name) : -1;
+
+            const playBtn = isAudio
+                ? `<button class="btn btn-primary" style="padding:6px 14px" onclick="playByIdx(${audioIdx})">▶ 재생</button>`
+                : '';
+            const dlBtn = isAudio
+                ? `<a href="/audio/${encodeURIComponent(safePath)}" download class="btn btn-secondary" style="padding:6px 14px; text-decoration:none">↓</a>`
+                : '';
+
+            return `<li>
+                <span class="file-icon">${icon}</span>
+                <span style="flex:1">${f.name}</span>
+                <span class="text-sm text-muted">${size}</span>
+                ${playBtn}
+                ${dlBtn}
+            </li>`;
+        }).join('');
+    } else if (!resp.dirs || resp.dirs.length === 0) {
+        fileList.innerHTML = '<li class="text-muted" style="padding:40px; text-align:center">파일 없음</li>';
+    } else {
+        fileList.innerHTML = '';
+    }
+}
+
+function navigateTo(path) {
+    pathHistory.push(currentPath);
+    browse(path);
+}
+
+document.getElementById('btn-back').addEventListener('click', () => {
+    if (pathHistory.length > 0) browse(pathHistory.pop());
+});
+
+document.getElementById('btn-home').addEventListener('click', () => {
+    pathHistory = [];
+    browse('');
+});
+
+document.getElementById('btn-open-explorer').addEventListener('click', async () => {
+    await api(`/api/open-folder?path=${encodeURIComponent(currentPath)}`);
+});
+
+// 오디오 재생
+function playByIdx(idx) {
+    if (idx < 0 || idx >= audioFiles.length) return;
+    currentAudioIdx = idx;
+    const f = audioFiles[idx];
+    const safePath = (currentPath + '/' + f.name).replace(/\\/g, '/');
+    const player = document.getElementById('main-player');
+    const section = document.getElementById('player-section');
+    player.src = `/audio/${encodeURIComponent(safePath)}`;
+    player.play();
+    section.style.display = '';
+    document.getElementById('now-playing').textContent = `🎵 ${f.name} (${idx + 1}/${audioFiles.length})`;
+}
+
+// 이전/다음
+document.getElementById('btn-prev').addEventListener('click', () => {
+    if (currentAudioIdx > 0) playByIdx(currentAudioIdx - 1);
+});
+document.getElementById('btn-next').addEventListener('click', () => {
+    if (currentAudioIdx < audioFiles.length - 1) playByIdx(currentAudioIdx + 1);
+});
+
+// 자동 다음 곡
+document.getElementById('main-player').addEventListener('ended', () => {
+    if (currentAudioIdx < audioFiles.length - 1) playByIdx(currentAudioIdx + 1);
+});
+
+// URL 파라미터로 경로 지정 가능
+const urlPath = new URLSearchParams(window.location.search).get('path');
+browse(urlPath || '');
+</script>
+{% endblock %}

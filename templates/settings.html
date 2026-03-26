@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}설정 — AI Music Factory{% endblock %}
+{% block content %}
+<h2>설정</h2>
+
+<div class="section">
+    <div class="form-group">
+        <label>Anthropic API Key (Opus 4.6)</label>
+        <div class="flex gap-8">
+            <input type="password" id="anthropic-key" placeholder="sk-ant-...">
+            <button class="btn btn-secondary" onclick="toggleKey('anthropic-key')">보기</button>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Gemini API Key (Lyria 3 Pro)</label>
+        <div class="flex gap-8">
+            <input type="password" id="gemini-key" placeholder="AIza...">
+            <button class="btn btn-secondary" onclick="toggleKey('gemini-key')">보기</button>
+        </div>
+    </div>
+    <div class="form-group">
+        <label>YouTube 공개 상태</label>
+        <select id="yt-privacy">
+            <option value="unlisted">미등록 (Unlisted)</option>
+            <option value="public">공개 (Public)</option>
+            <option value="private">비공개 (Private)</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>출력 경로</label>
+        <input type="text" id="output-dir">
+    </div>
+    <button class="btn btn-primary" id="btn-save">저장</button>
+    <span class="text-sm text-success ml-auto" id="save-msg" style="display:none">저장됨 ✓</span>
+</div>
+
+<div class="section mt-16">
+    <h2>내장 프리셋 (8종)</h2>
+    <div class="preset-grid" id="preset-list"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSettings() {
+    const cfg = await api('/api/settings');
+    // 마스킹된 키는 input에 표시만
+    document.getElementById('anthropic-key').placeholder = cfg.ANTHROPIC_API_KEY || 'sk-ant-...';
+    document.getElementById('gemini-key').placeholder = cfg.GEMINI_API_KEY || 'AIza...';
+    document.getElementById('yt-privacy').value = cfg.YT_PRIVACY || 'unlisted';
+    document.getElementById('output-dir').value = cfg.PLAYLIST_OUTPUT_DIR || '';
+
+    // 프리셋 표시
+    const presets = await api('/api/presets');
+    document.getElementById('preset-list').innerHTML = Object.entries(presets).map(([k, p]) => `
+        <div class="preset-card">
+            <div class="preset-name">${p.name}</div>
+            <div class="preset-desc">${p.description}</div>
+            <div class="preset-genre">${p.genre}</div>
+            <div class="text-sm text-muted mt-8">${p.tempo} · ${p.vocal}</div>
+        </div>
+    `).join('');
+}
+
+function toggleKey(id) {
+    const inp = document.getElementById(id);
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+document.getElementById('btn-save').addEventListener('click', async () => {
+    const updates = {};
+    const ak = document.getElementById('anthropic-key').value.trim();
+    const gk = document.getElementById('gemini-key').value.trim();
+    if (ak) updates.ANTHROPIC_API_KEY = ak;
+    if (gk) updates.GEMINI_API_KEY = gk;
+    updates.YT_PRIVACY = document.getElementById('yt-privacy').value;
+    updates.PLAYLIST_OUTPUT_DIR = document.getElementById('output-dir').value;
+
+    await api('/api/settings', { method: 'POST', body: JSON.stringify(updates) });
+    const msg = document.getElementById('save-msg');
+    msg.style.display = 'inline';
+    setTimeout(() => msg.style.display = 'none', 3000);
+});
+
+loadSettings();
+</script>
+{% endblock %}
