@@ -48,6 +48,11 @@ def browser_page():
     return render_template("browser.html")
 
 
+@app.route("/brands")
+def brands_page():
+    return render_template("brands.html")
+
+
 # ─── API ─────────────────────────────────────
 @app.route("/api/jobs", methods=["GET"])
 def api_list_jobs():
@@ -99,6 +104,28 @@ def api_retry_track(job_id):
 @app.route("/api/disk-stats")
 def api_disk_stats():
     return jsonify(job_manager.get_disk_stats())
+
+
+BRAND_PROFILES_FILE = Path(__file__).parent / "brand_profiles.json"
+
+
+@app.route("/api/brand-profiles", methods=["GET"])
+def api_get_brand_profiles():
+    if BRAND_PROFILES_FILE.exists():
+        return jsonify(json.loads(BRAND_PROFILES_FILE.read_text(encoding="utf-8")))
+    return jsonify([])
+
+
+@app.route("/api/brand-profiles", methods=["POST"])
+def api_save_brand_profiles():
+    data = request.json
+    if not data or "profiles" not in data:
+        return jsonify({"error": "No profiles"}), 400
+    BRAND_PROFILES_FILE.write_text(
+        json.dumps(data["profiles"], ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return jsonify({"status": "saved"})
 
 
 @app.route("/api/events")

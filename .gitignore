@@ -5,4 +5,5 @@ output/
 __pycache__/
 jobs_history.json
 cost_history.json
+brand_profiles.json
 *.pyc

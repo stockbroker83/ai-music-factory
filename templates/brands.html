@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}무드 브랜드 매니저 — AI Music Factory{% endblock %}
+{% block content %}
+
+<div style="text-align:center; margin-bottom:28px">
+    <h1 style="font-size:26px; font-weight:900; margin-bottom:6px; background:linear-gradient(135deg,#ff6b9d,#c4a7ff,#fab387); -webkit-background-clip:text; -webkit-text-fill-color:transparent">
+        AI Music Factory — 무드 브랜드 매니저
+    </h1>
+    <p class="text-sm text-muted">검색으로 브랜드를 탐색하고, 슬롯에 넣고 빼면서 채널 에셋을 관리하세요</p>
+</div>
+
+<div style="display:grid; grid-template-columns:300px 1fr; gap:20px; align-items:start">
+    <!-- 슬롯 패널 -->
+    <div id="slot-panel" style="position:sticky; top:72px; background:#0d0d14; border:1px solid #222; border-radius:14px; padding:18px">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px">
+            <div style="font-size:15px; font-weight:800">채널 에셋 슬롯</div>
+            <div id="slot-counter" style="font-size:11px; padding:3px 10px; border-radius:12px; background:#ffffff08; color:#666; border:1px solid #333">0/3</div>
+        </div>
+        <div id="slot-list" style="display:flex; flex-direction:column; gap:8px"></div>
+        <button id="btn-confirm" style="display:none; width:100%; margin-top:14px; padding:12px 0; background:linear-gradient(135deg,#ff6b9d,#c4a7ff); color:#000; border:none; border-radius:10px; cursor:pointer; font-size:14px; font-weight:800; letter-spacing:0.5px">
+            확정 & 프리셋 저장
+        </button>
+    </div>
+
+    <!-- 브랜드 목록 -->
+    <div>
+        <div style="position:relative; margin-bottom:20px">
+            <div style="position:absolute; left:16px; top:50%; transform:translateY(-50%); font-size:18px; opacity:0.5; pointer-events:none">🔍</div>
+            <input id="brand-search" placeholder="브랜드 검색... (장르, 무드, 키워드, 악기 등)"
+                style="width:100%; padding:14px 16px 14px 48px; font-size:15px; background:#111118; border:1px solid #2a2a35; border-radius:12px; color:#e8e6e3; outline:none; box-sizing:border-box; transition:border-color 0.2s">
+            <div id="search-count" style="position:absolute; right:16px; top:50%; transform:translateY(-50%); font-size:12px; color:#888; display:none"></div>
+        </div>
+        <div id="brand-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:12px"></div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const MOOD_BRANDS = [
+  {
+    id:"midnight_drift", name:"미드나잇 드리프트", subtitle:"Midnight Drift", emoji:"🌃",
+    tagline:"도시의 밤을 달리는 레트로 감성",
+    description:"심야 드라이브, 시티팝, 네온 불빛 아래의 노스탤지어. 80~90s 레트로 무드와 현대적 감성의 교차점.",
+    target:"20~35세 직장인, 퇴근 후 드라이브 / 야간 루틴 시청자",
+    viralReason:"시티팝 역주행 트렌드 + '밤 드라이브' 키워드 검색량 지속 증가. MZ세대 레트로 감성 소비 폭증.",
+    allowed:{genres:["시티팝","신스웨이브","레트로웨이브","소프트 펑크","일렉트로닉 팝","뉴레트로"],moods:["몽환적","노스탤지어","도시적","쿨한","섹시한","나른한"],tempoRange:"90~125 BPM",instruments:["아날로그 신스","일렉기타","슬랩베이스","드럼머신","색소폰"],vocal:"부드러운 보컬 / 인스트루멘탈 모두 OK"},
+    forbidden:{genres:["EDM/하드스타일","헤비메탈","트로트","클래식 오케스트라"],moods:["밝고 경쾌","귀여운","동화적","종교적"],notes:"BPM 130 이상 금지. 어쿠스틱 기타 메인 금지."},
+    seasonFit:"사계절 (특히 여름밤, 가을밤)", colorScheme:{primary:"#0f0c29",secondary:"#302b63",accent:"#ff6b9d"},
+    competitorGap:"기존 드라이브 플리는 K-POP 위주. AI 오리지널 시티팝/신스웨이브는 블루오션.",
+    searchTags:["드라이브","시티팝","밤","네온","레트로","신스웨이브","야간","도시"]
+  },
+  {
+    id:"rainy_window", name:"레이니 윈도우", subtitle:"Rainy Window", emoji:"🌧️",
+    tagline:"빗소리와 함께 흐르는 피아노 카페",
+    description:"비 오는 날 창가 카페에서 듣는 잔잔한 피아노와 재즈. 빗소리 앰비언트와 음악의 조화.",
+    target:"20~40세 여성 중심, 재택근무자, 카페 분위기 애호가",
+    viralReason:"'비오는날 음악' 시즌 무관 상시 검색. 카페음악+빗소리 조합은 YouTube에서 100만뷰+ 달성률 가장 높은 카테고리.",
+    allowed:{genres:["카페 재즈","피아노 앰비언트","보사노바","소프트 재즈","어쿠스틱"],moods:["잔잔한","포근한","서정적","감성적","사색적"],tempoRange:"55~95 BPM",instruments:["피아노","브러시드 드럼","업라이트 베이스","비브라폰","첼로","빗소리"],vocal:"인스트루멘탈 위주 (간혹 허밍 OK)"},
+    forbidden:{genres:["록","힙합","EDM","트랩","메탈"],moods:["격렬한","분노","신나는","파워풀"],notes:"일렉 기타 디스토션 금지. BPM 100 이상 금지. 드럼 강세 금지."},
+    seasonFit:"사계절 (장마철/가을 피크)", colorScheme:{primary:"#1a1a2e",secondary:"#4a5568",accent:"#88b4d3"},
+    competitorGap:"기존 빗소리 플리는 ASMR 위주. 고퀄리티 재즈+빗소리 음악은 AI로 차별화 가능.",
+    searchTags:["비","카페","재즈","피아노","잔잔한","빗소리","창가","보사노바"]
+  },
+  {
+    id:"dawn_feelings", name:"새벽감성 3AM", subtitle:"Dawn Feelings 3AM", emoji:"🌙",
+    tagline:"새벽 3시, 감정이 깊어지는 시간",
+    description:"혼자 깨어있는 새벽, 감성 발라드와 R&B. 한국인의 '한(恨)' 감성을 현대적으로 풀어낸 음악.",
+    target:"20~30대, 감성글 소비층, 이별/감성 콘텐츠 시청자",
+    viralReason:"'새벽감성' 키워드는 한국 플리 시장에서 가장 검증된 카테고리. 3시간+ 장시간 재생으로 시청시간 극대화.",
+    allowed:{genres:["한국 발라드","R&B","소울","피아노 발라드","어쿠스틱 팝"],moods:["감성적","애절한","그리운","외로운","사색적","위로"],tempoRange:"55~85 BPM",instruments:["피아노","어쿠스틱 기타","스트링 앙상블","첼로","신스패드"],vocal:"감성 보컬 (남녀 모두) / 인스트루멘탈"},
+    forbidden:{genres:["댄스팝","트랩","하우스","록","메탈"],moods:["밝은","활기찬","귀여운","유머러스"],notes:"BPM 90 이상 금지. 전자음 메인 금지. 비트 강조 금지."},
+    seasonFit:"사계절 (겨울 피크)", colorScheme:{primary:"#0a0a1a",secondary:"#1a1a3e",accent:"#c4a7ff"},
+    competitorGap:"발라드 플리는 기존곡 모음이 대부분. AI 오리지널 한국 감성 발라드는 거의 없음.",
+    searchTags:["새벽","발라드","감성","이별","R&B","한국","슬픈","외로운"]
+  },
+  {
+    id:"morning_bloom", name:"모닝 블룸", subtitle:"Morning Bloom", emoji:"🌸",
+    tagline:"상쾌한 아침을 여는 따뜻한 선율",
+    description:"출근 전 준비 시간, 주말 아침 브런치. 인디 어쿠스틱과 포크 감성으로 하루를 여는 플리.",
+    target:"25~40세 직장인, 모닝루틴 시청자, 브이로그 BGM 수요",
+    viralReason:"'출근길 플리', '모닝루틴 음악' 키워드 2025년 급성장. 기상→준비→출근 시간대 사용 패턴 확실.",
+    allowed:{genres:["인디 어쿠스틱","포크팝","소프트팝","보사노바","어쿠스틱 R&B"],moods:["따뜻한","희망적","상쾌한","평화로운","가벼운"],tempoRange:"80~115 BPM",instruments:["어쿠스틱 기타","우쿨렐레","글로켄슈필","가벼운 퍼커션","피아노"],vocal:"따뜻한 보컬 / 인스트루멘탈"},
+    forbidden:{genres:["일렉트로닉","힙합","메탈","다크앰비언트"],moods:["어두운","우울한","무거운","공포적"],notes:"신스 메인 금지. 마이너키 3곡 연속 금지. 무거운 베이스 금지."},
+    seasonFit:"사계절 (봄 피크)", colorScheme:{primary:"#1a1812",secondary:"#2d2820",accent:"#5a8f5a"},
+    competitorGap:"'아침 플리'는 시장 대비 공급 적음. 특히 오리지널 곡 아침 플리는 희소.",
+    searchTags:["아침","출근","모닝","어쿠스틱","인디","브런치","상쾌","포크"]
+  },
+  {
+    id:"focus_zone", name:"포커스 존", subtitle:"Focus Zone", emoji:"🎯",
+    tagline:"몰입을 위한 사운드스케이프",
+    description:"공부, 코딩, 업무 집중용. Lo-fi, 앰비언트, 미니멀 일렉트로닉의 비침습적 사운드.",
+    target:"18~35세 학생/개발자/재택근무자, Lofi Girl 구독층",
+    viralReason:"Lofi Girl 모델 증명 완료. 장시간 재생(3~10시간) → 시청시간 폭발. 한국판 Focus 플리 시장 성장중.",
+    allowed:{genres:["lo-fi 힙합","칠아웃","앰비언트","미니멀 일렉트로닉","포스트록"],moods:["차분한","집중적","미니멀","드리미","중립적"],tempoRange:"65~95 BPM",instruments:["lo-fi 피아노","바이닐 크래클","멜로우 드럼","신스패드","기타 루프"],vocal:"보컬 없음 (인스트루멘탈 전용)"},
+    forbidden:{genres:["보컬 팝","발라드","록","트랩","EDM"],moods:["감정적","격렬한","슬픈","흥분된"],notes:"가사 있는 보컬 절대 금지. 급격한 다이나믹 변화 금지. 서프라이즈 요소 금지."},
+    seasonFit:"사계절 (시험기간 피크)", colorScheme:{primary:"#1e1e2e",secondary:"#2d2d3f",accent:"#fab387"},
+    competitorGap:"Lofi Girl은 영어권. 한국 감성 lo-fi + 한국 학생/직장인 타겟은 블루오션.",
+    searchTags:["공부","집중","lo-fi","코딩","업무","lofi","앰비언트","카페"]
+  },
+  {
+    id:"healing_forest", name:"힐링 포레스트", subtitle:"Healing Forest", emoji:"🌿",
+    tagline:"자연 속 치유의 사운드",
+    description:"수면, 명상, 요가를 위한 뉴에이지와 앰비언트. 자연 사운드스케이프와 크리스탈 사운드의 조화.",
+    target:"30~60세 수면 장애/스트레스 해소 시청자, 명상 입문자",
+    viralReason:"수면/명상 음악 시장 연 30%+ 성장. '잠 잘때 듣는 음악' 검색량 폭증. 고령층 YouTube 유입 증가.",
+    allowed:{genres:["뉴에이지","앰비언트","명상음악","사운드스케이프","드론뮤직"],moods:["평화로운","치유적","고요한","영적","포근한"],tempoRange:"40~70 BPM",instruments:["크리스탈 보울","싱잉볼","소프트 피아노","플루트","자연음(새소리, 물소리, 바람)"],vocal:"보컬 없음 (간혹 목소리 톤 허밍)"},
+    forbidden:{genres:["팝","록","힙합","재즈","일렉트로닉 비트"],moods:["흥분","에너제틱","슬픈","우울"],notes:"드럼/비트 완전 금지. 갑작스러운 음량 변화 절대 금지. BPM 75 이상 금지."},
+    seasonFit:"사계절 (겨울 피크)", colorScheme:{primary:"#0d1b0e",secondary:"#1a3a1c",accent:"#a8d8b9"},
+    competitorGap:"수면음악 플리는 저퀄 반복이 많음. AI 고퀄리티 뉴에이지는 차별화 뚜렷.",
+    searchTags:["수면","명상","힐링","자연","요가","잠","뉴에이지","ASMR"]
+  },
+  {
+    id:"retro_vinyl", name:"레트로 바이닐", subtitle:"Retro Vinyl", emoji:"🎵",
+    tagline:"LP 바늘이 지나간 자리의 따뜻함",
+    description:"60~80년대 올드스쿨 소울, 펑크, 디스코의 따뜻한 아날로그 감성. 바이닐 크래클과 테이프 히스 사운드.",
+    target:"25~45세 빈티지 감성 소비자, 와인바/레코드숍 분위기 애호가",
+    viralReason:"빈티지/아날로그 트렌드 지속 성장. '레코드숍 BGM', '와인바 음악' 니치 수요 확인.",
+    allowed:{genres:["소울","펑크","디스코","모타운","빈티지 R&B","올드스쿨 재즈"],moods:["따뜻한","그루비","노스탤지어","세련된","로맨틱"],tempoRange:"85~125 BPM",instruments:["로즈 피아노","펑크 기타","호른 섹션","브러시드 드럼","베이스라인","바이닐 크래클"],vocal:"따뜻한 소울 보컬 / 인스트루멘탈"},
+    forbidden:{genres:["EDM","트랩","메탈","K-POP 아이돌","뉴에이지"],moods:["차가운","디지털적","공포적","아이돌 감성"],notes:"디지털 신스 메인 금지. 오토튠 금지. 현대적 프로덕션 톤 최소화."},
+    seasonFit:"사계절 (가을/겨울 피크)", colorScheme:{primary:"#2a1810",secondary:"#5c3d2e",accent:"#d4956b"},
+    competitorGap:"빈티지 소울/펑크 플리 한국 시장에 극소. AI로 아날로그 톤 재현은 신선.",
+    searchTags:["바이닐","레트로","소울","펑크","디스코","빈티지","LP","와인"]
+  },
+  {
+    id:"emotional_cinema", name:"이모셔널 시네마", subtitle:"Emotional Cinema", emoji:"🎬",
+    tagline:"영화 같은 하루를 위한 사운드트랙",
+    description:"시네마틱 스코어, 에픽 오케스트라, 감동적 피아노. 영화/드라마 OST 감성의 오리지널 스코어.",
+    target:"20~40세 영화/드라마 팬, 감성 콘텐츠 소비자, 창작자",
+    viralReason:"K-드라마 글로벌 확산 → OST 수요 폭증. '드라마 OST 같은 음악' 검색 급증. 시네마틱 숏폼 BGM 수요.",
+    allowed:{genres:["시네마틱","네오클래식","에픽 오케스트라","피아노 스코어","앰비언트 오케스트라"],moods:["감동적","웅장한","서사적","희망적","비장한","아름다운"],tempoRange:"50~130 BPM",instruments:["풀 오케스트라","피아노","스트링 앙상블","합창","프렌치 혼","타이코 드럼"],vocal:"합창/코러스 (가사 없음) / 인스트루멘탈"},
+    forbidden:{genres:["팝","힙합","lo-fi","트로트","EDM"],moods:["일상적","가벼운","귀여운","코미디"],notes:"팝 구조(verse-chorus) 금지. 캐주얼 보컬 금지."},
+    seasonFit:"사계절", colorScheme:{primary:"#0a0a14",secondary:"#1a1a2e",accent:"#d4af37"},
+    competitorGap:"기존 OST 플리는 저작권 곡 모음. AI 오리지널 시네마틱 스코어 플리는 거의 전무.",
+    searchTags:["영화","OST","시네마틱","오케스트라","드라마","감동","에픽","스코어"]
+  },
+  {
+    id:"weekend_chill", name:"위켄드 칠", subtitle:"Weekend Chill", emoji:"☀️",
+    tagline:"주말 오후의 여유로운 그루브",
+    description:"주말 브런치, 홈파티, 테라스 칵테일. 트로피컬 하우스와 인디 R&B의 여유로운 그루브.",
+    target:"25~35세 라이프스타일 소비자, SNS 감성 사진 시청자",
+    viralReason:"주말/휴일 플리 수요 꾸준. '홈카페', '브런치 음악', '테라스 BGM' 니치 성장. 인스타 릴스 BGM 수요.",
+    allowed:{genres:["트로피컬 하우스","인디 R&B","소프트 일렉트로닉팝","네오소울","라운지"],moods:["여유로운","활기찬","세련된","따스한","그루비"],tempoRange:"90~120 BPM",instruments:["마림바","트로피컬 퍼커션","일렉 피아노","핑거 베이스","스틸드럼"],vocal:"가벼운 팝 보컬 / 인스트루멘탈"},
+    forbidden:{genres:["발라드","메탈","다크앰비언트","클래식","트로트"],moods:["우울한","어두운","무거운","비장한"],notes:"마이너키 2곡 연속 금지. BPM 70 이하 금지. 느린 피아노 솔로 금지."},
+    seasonFit:"봄~가을 (여름 피크)", colorScheme:{primary:"#1a1510",secondary:"#2d2518",accent:"#ff8a5c"},
+    competitorGap:"'주말 감성 플리'는 한국어권에서 수요 대비 공급 부족. 특히 오리지널 곡은 거의 없음.",
+    searchTags:["주말","브런치","홈파티","여유","트로피컬","칵테일","테라스","여름"]
+  },
+  {
+    id:"after_work_soju", name:"퇴근 후 한잔", subtitle:"After Work Soju", emoji:"🍺",
+    tagline:"오늘도 수고했어, 나 자신",
+    description:"퇴근길~혼술/혼밥 시간의 위로 플리. 한국 인디, 감성 팝, 어쿠스틱 R&B로 하루를 마무리.",
+    target:"25~40세 직장인 (남녀 모두), 퇴근 후 감성 충전 시청자",
+    viralReason:"'퇴근 후 위로 플리', '혼술 감성' 키워드 2025년 신규 트렌드로 부상. 직장인 공감 콘텐츠 폭증.",
+    allowed:{genres:["한국 인디","어쿠스틱 팝","시티 R&B","소프트 록","블루스팝"],moods:["위로","나른한","쓸쓸한","따뜻한","공감적","회고적"],tempoRange:"70~105 BPM",instruments:["어쿠스틱 기타","일렉 피아노","브러시 드럼","베이스","하모니카"],vocal:"감성 보컬 (한국어 느낌) / 인스트루멘탈"},
+    forbidden:{genres:["EDM","메탈","클래식","뉴에이지","아이돌팝"],moods:["밝고 경쾌","웅장한","파워풀","동화적"],notes:"오케스트라 금지. BPM 110 이상 금지. 하이톤 보컬 금지."},
+    seasonFit:"사계절 (가을/겨울 피크)", colorScheme:{primary:"#1a1520",secondary:"#2d2535",accent:"#f0a050"},
+    competitorGap:"'퇴근 후' 특화 플리 거의 없음. 한국 직장인 공감 감성 + AI 오리지널 = 강력한 포지셔닝.",
+    searchTags:["퇴근","혼술","위로","직장인","인디","한잔","감성","어쿠스틱"]
+  }
+];
+
+let slots = [];
+let expandedId = null;
+
+function renderAll() {
+    renderSlots();
+    renderBrands();
+}
+
+function renderSlots() {
+    const list = document.getElementById('slot-list');
+    const counter = document.getElementById('slot-counter');
+    counter.textContent = `${slots.length}/3`;
+    counter.style.background = slots.length === 3 ? '#4ade8020' : '#ffffff08';
+    counter.style.color = slots.length === 3 ? '#4ade80' : '#666';
+    counter.style.borderColor = slots.length === 3 ? '#4ade8040' : '#333';
+
+    let html = '';
+    for (let i = 0; i < 3; i++) {
+        const brandId = slots[i];
+        const brand = MOOD_BRANDS.find(b => b.id === brandId);
+        if (!brand) {
+            html += `<div style="border:2px dashed #2a2a35; border-radius:10px; padding:14px 16px; text-align:center; color:#444; font-size:12px">
+                SLOT ${i+1} — 아래에서 브랜드를 선택하세요
+            </div>`;
+        } else {
+            html += `<div draggable="true" data-slot="${i}" style="display:flex; align-items:center; gap:10px;
+                background:linear-gradient(135deg,${brand.colorScheme.primary},${brand.colorScheme.secondary});
+                border:1px solid ${brand.colorScheme.accent}50; border-radius:10px; padding:10px 14px; cursor:grab">
+                <div style="color:#555; font-size:14px; cursor:grab; user-select:none">⠿</div>
+                <div style="font-size:20px">${brand.emoji}</div>
+                <div style="flex:1">
+                    <div style="font-size:13px; font-weight:700">${brand.name}</div>
+                    <div style="font-size:10px; color:${brand.colorScheme.accent}">${brand.tagline}</div>
+                </div>
+                <button onclick="removeSlot('${brand.id}')" style="background:rgba(255,85,85,0.15); border:1px solid #ff555540;
+                    color:#ff5555; width:26px; height:26px; border-radius:6px; cursor:pointer; font-size:13px;
+                    display:flex; align-items:center; justify-content:center">✕</button>
+            </div>`;
+        }
+    }
+    list.innerHTML = html;
+
+    // 드래그 & 드롭
+    list.querySelectorAll('[draggable]').forEach(el => {
+        el.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', el.dataset.slot); el.style.opacity='0.5'; });
+        el.addEventListener('dragend', e => { el.style.opacity='1'; });
+        el.addEventListener('dragover', e => e.preventDefault());
+        el.addEventListener('drop', e => {
+            e.preventDefault();
+            const from = parseInt(e.dataTransfer.getData('text/plain'));
+            const to = parseInt(el.dataset.slot);
+            if (!isNaN(from) && !isNaN(to) && from !== to && slots[from] && slots[to]) {
+                [slots[from], slots[to]] = [slots[to], slots[from]];
+                renderAll();
+            }
+        });
+    });
+
+    // 확정 버튼
+    document.getElementById('btn-confirm').style.display = slots.length === 3 ? '' : 'none';
+}
+
+function renderBrands() {
+    const query = document.getElementById('brand-search').value.toLowerCase().trim();
+    const searchCount = document.getElementById('search-count');
+
+    const filtered = MOOD_BRANDS.filter(b => {
+        if (!query) return true;
+        const hay = [b.name, b.subtitle, b.tagline, b.description,
+            ...b.allowed.genres, ...b.allowed.moods, ...b.allowed.instruments,
+            b.allowed.vocal, ...b.forbidden.genres, ...b.forbidden.moods,
+            b.target, b.seasonFit, b.competitorGap, ...b.searchTags
+        ].join(' ').toLowerCase();
+        return query.split(/\s+/).every(w => hay.includes(w));
+    });
+
+    if (query) {
+        searchCount.style.display = '';
+        searchCount.textContent = `${filtered.length}/${MOOD_BRANDS.length} 매칭`;
+    } else {
+        searchCount.style.display = 'none';
+    }
+
+    const grid = document.getElementById('brand-grid');
+    if (query && filtered.length === 0) {
+        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px 0; color:#555; font-size:14px">"${query}"에 매칭되는 브랜드가 없습니다</div>`;
+        return;
+    }
+
+    grid.innerHTML = filtered.map(b => {
+        const isInSlot = slots.includes(b.id);
+        const slotIdx = slots.indexOf(b.id);
+        const disabled = slots.length >= 3 && !isInSlot;
+        const isExp = expandedId === b.id;
+
+        return `<div style="grid-column:${isExp ? '1/-1' : 'auto'};
+            background:${isInSlot ? `linear-gradient(145deg,${b.colorScheme.primary},${b.colorScheme.secondary})` : '#111118'};
+            border:2px solid ${isInSlot ? b.colorScheme.accent : '#1e1e28'};
+            border-radius:14px; padding:16px 18px; cursor:${disabled ? 'not-allowed' : 'pointer'};
+            opacity:${disabled ? '0.35' : '1'}; transition:all 0.25s; position:relative; overflow:hidden">
+
+            ${isInSlot ? `<div style="position:absolute; top:0; right:0; padding:4px 12px;
+                background:${b.colorScheme.accent}; color:#000; font-size:10px; font-weight:900;
+                border-radius:0 0 0 10px; letter-spacing:1px">SLOT ${slotIdx+1}</div>` : ''}
+
+            <div onclick="${disabled ? '' : `toggleSlot('${b.id}')`}" style="display:flex; gap:12px; align-items:center">
+                <div style="width:44px; height:44px; border-radius:12px;
+                    background:${isInSlot ? b.colorScheme.accent : '#1a1a25'};
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:${isInSlot ? '18' : '22'}px; font-weight:800; flex-shrink:0;
+                    color:${isInSlot ? '#000' : '#fff'}; transition:all 0.2s">
+                    ${isInSlot ? '✓' : b.emoji}
+                </div>
+                <div style="flex:1; min-width:0">
+                    <div style="font-size:16px; font-weight:700; display:flex; align-items:center; gap:6px">
+                        ${b.name}
+                        <span style="font-size:11px; color:#666; font-weight:400">${b.subtitle}</span>
+                    </div>
+                    <div style="font-size:12px; color:${isInSlot ? b.colorScheme.accent : '#888'}; margin-top:2px">${b.tagline}</div>
+                </div>
+            </div>
+
+            <p style="font-size:12px; color:#999; line-height:1.6; margin:10px 0 8px">${b.description}</p>
+
+            <div style="display:flex; gap:5px; flex-wrap:wrap">
+                ${b.allowed.genres.slice(0,3).map(g => `<span style="padding:2px 7px; border-radius:8px; font-size:10px;
+                    background:${isInSlot ? b.colorScheme.accent+'20' : '#1a1a25'};
+                    color:${isInSlot ? b.colorScheme.accent : '#666'};
+                    border:1px solid ${isInSlot ? b.colorScheme.accent+'30' : '#252530'}">${g}</span>`).join('')}
+                <span style="padding:2px 7px; border-radius:8px; font-size:10px; background:#1a1a25; color:#555">${b.allowed.tempoRange}</span>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px">
+                <span style="font-size:10px; color:#555">🎯 ${b.target.split(',')[0]} · 📅 ${b.seasonFit.split('(')[0]}</span>
+                <button onclick="event.stopPropagation(); toggleExpand('${b.id}')" style="background:none; border:1px solid #333;
+                    color:#777; padding:2px 8px; border-radius:5px; cursor:pointer; font-size:10px">${isExp ? '접기' : '상세'}</button>
+            </div>
+
+            ${isExp ? `<div style="margin-top:14px; padding:14px; background:rgba(0,0,0,0.35); border-radius:10px; font-size:11px; line-height:1.8">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px">
+                    <div>
+                        <div style="color:#4ade80; font-weight:700; margin-bottom:4px">✅ 허용</div>
+                        <div><b>장르:</b> ${b.allowed.genres.join(', ')}</div>
+                        <div><b>무드:</b> ${b.allowed.moods.join(', ')}</div>
+                        <div><b>템포:</b> ${b.allowed.tempoRange}</div>
+                        <div><b>악기:</b> ${b.allowed.instruments.join(', ')}</div>
+                        <div><b>보컬:</b> ${b.allowed.vocal}</div>
+                    </div>
+                    <div>
+                        <div style="color:#ff5555; font-weight:700; margin-bottom:4px">🚫 금지</div>
+                        <div><b>장르:</b> ${b.forbidden.genres.join(', ')}</div>
+                        <div><b>무드:</b> ${b.forbidden.moods.join(', ')}</div>
+                        <div style="color:#ff8888; margin-top:4px; font-style:italic">${b.forbidden.notes}</div>
+                    </div>
+                </div>
+                <div style="margin-top:10px; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:6px">
+                    <div><b>📈 바이럴:</b> ${b.viralReason}</div>
+                    <div style="margin-top:3px"><b style="color:#4ade80">💡 차별화:</b> ${b.competitorGap}</div>
+                </div>
+            </div>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function toggleSlot(id) {
+    if (slots.includes(id)) {
+        slots = slots.filter(x => x !== id);
+    } else if (slots.length < 3) {
+        slots.push(id);
+    }
+    renderAll();
+}
+
+function removeSlot(id) {
+    slots = slots.filter(x => x !== id);
+    renderAll();
+}
+
+function toggleExpand(id) {
+    expandedId = expandedId === id ? null : id;
+    renderBrands();
+}
+
+// 확정 버튼 — 서버에 프리셋으로 저장
+document.getElementById('btn-confirm').addEventListener('click', async () => {
+    const selected = slots.map(id => MOOD_BRANDS.find(b => b.id === id));
+    const profiles = selected.map(b => ({
+        id: b.id, name: b.name, subtitle: b.subtitle, emoji: b.emoji,
+        tagline: b.tagline, description: b.description,
+        target_audience: b.target, season_fit: b.seasonFit,
+        allowed: b.allowed, forbidden: b.forbidden,
+        color_scheme: b.colorScheme, competitor_gap: b.competitorGap
+    }));
+
+    const resp = await api('/api/brand-profiles', {
+        method: 'POST',
+        body: JSON.stringify({ profiles }),
+    });
+
+    if (resp.status === 'saved') {
+        alert(`채널 프로필 저장 완료!\n\n${selected.map((b,i) => `${i+1}. ${b.emoji} ${b.name}`).join('\n')}\n\n새 작업 페이지에서 브랜드 기반 생성이 가능합니다.`);
+    } else {
+        alert('저장 실패: ' + (resp.error || ''));
+    }
+});
+
+// 검색
+document.getElementById('brand-search').addEventListener('input', renderBrands);
+document.getElementById('brand-search').addEventListener('focus', e => e.target.style.borderColor = '#fab387');
+document.getElementById('brand-search').addEventListener('blur', e => e.target.style.borderColor = '#2a2a35');
+
+// 초기 렌더링
+renderAll();
+</script>
+{% endblock %}
