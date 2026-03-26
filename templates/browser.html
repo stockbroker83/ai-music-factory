@@ -9,6 +9,7 @@
 <div class="flex gap-8 mb-16">
     <button class="btn btn-secondary" id="btn-back">← 뒤로</button>
     <button class="btn btn-secondary" id="btn-home">홈</button>
+    <button class="btn btn-secondary" id="btn-browse-timeline" style="display:none">타임라인</button>
     <span class="text-sm text-muted" id="current-path" style="margin-left:8px; word-break:break-all"></span>
 </div>
 
@@ -43,6 +44,25 @@
     </div>
     <audio id="main-player" controls style="width:100%; height:40px"></audio>
 </div>
+<!-- 타임라인 모달 -->
+<div class="modal-overlay" id="timeline-modal">
+    <div class="modal">
+        <div class="flex gap-16 mb-16">
+            <h3 id="tl-title">YouTube 타임라인</h3>
+            <button class="btn btn-secondary ml-auto" style="padding:4px 12px" onclick="document.getElementById('timeline-modal').classList.remove('active')">✕</button>
+        </div>
+        <div class="flex gap-16 mb-16">
+            <span class="text-sm" id="tl-info">—</span>
+        </div>
+        <div class="timeline-bar" id="tl-bar"></div>
+        <ul class="timeline-list" id="tl-list"></ul>
+        <div class="flex gap-16 mb-16">
+            <h3 style="font-size:14px">YouTube 설명 복사</h3>
+            <button class="btn-copy" id="btn-copy-tl" onclick="copyTimeline()">복사</button>
+        </div>
+        <div class="yt-desc-box" id="tl-yt-desc"></div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -61,6 +81,7 @@ async function browse(path) {
 
     // 오디오 파일 목록 저장 (이전/다음 재생용)
     audioFiles = (resp.files || []).filter(f => f.type === '.mp3' || f.type === '.wav');
+    if (typeof updateTimelineBtn === 'function') updateTimelineBtn();
 
     // 폴더 요약
     const summary = document.getElementById('folder-summary');
@@ -163,6 +184,56 @@ document.getElementById('btn-next').addEventListener('click', () => {
 // 자동 다음 곡
 document.getElementById('main-player').addEventListener('ended', () => {
     if (currentAudioIdx < audioFiles.length - 1) playByIdx(currentAudioIdx + 1);
+});
+
+// 타임라인 버튼 표시 (mp3 파일 있는 폴더에서만)
+function updateTimelineBtn() {
+    document.getElementById('btn-browse-timeline').style.display = audioFiles.length > 0 ? '' : 'none';
+}
+
+const COLORS = ['#3fb950','#58a6ff','#d29922','#f85149','#bc8cff','#39d353','#79c0ff','#e3b341','#ff7b72','#d2a8ff'];
+document.getElementById('btn-browse-timeline').addEventListener('click', async () => {
+    const data = await api(`/api/browse-timeline?path=${encodeURIComponent(currentPath)}`);
+    if (data.error) { alert(data.error); return; }
+
+    document.getElementById('tl-title').textContent = data.concept_name;
+    document.getElementById('tl-info').textContent = `${data.total_tracks}곡 · ${data.total_duration_str}`;
+
+    const bar = document.getElementById('tl-bar');
+    bar.innerHTML = data.timeline.map((t, i) => {
+        const pct = (t.duration_sec / data.total_duration_sec * 100).toFixed(1);
+        const bg = COLORS[i % COLORS.length];
+        return `<div class="timeline-segment" style="width:${pct}%;background:${bg}" title="${t.title} (${t.timestamp})">${pct > 5 ? (i+1) : ''}</div>`;
+    }).join('');
+
+    const list = document.getElementById('tl-list');
+    list.innerHTML = data.timeline.map((t, i) => {
+        const durMin = Math.floor(t.duration_sec / 60);
+        const durSec = Math.round(t.duration_sec % 60);
+        return `<li>
+            <span style="width:20px;text-align:center;color:${COLORS[i % COLORS.length]}">${i+1}</span>
+            <span class="ts">${t.timestamp}</span>
+            <span style="flex:1">${t.title}</span>
+            <span class="dur">${durMin}:${String(durSec).padStart(2,'0')}</span>
+        </li>`;
+    }).join('');
+
+    document.getElementById('tl-yt-desc').textContent = data.youtube_description;
+    document.getElementById('timeline-modal').classList.add('active');
+});
+
+function copyTimeline() {
+    const text = document.getElementById('tl-yt-desc').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('btn-copy-tl');
+        btn.textContent = '복사 완료!';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '복사'; btn.classList.remove('copied'); }, 2000);
+    });
+}
+
+document.getElementById('timeline-modal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
 });
 
 // URL 파라미터로 경로 지정 가능
